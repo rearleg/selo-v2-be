@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+    env_file:
+      - .env.production
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./staticfiles:/app/staticfiles
+      - ./mediafiles:/app/mediafiles
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check", "--deploy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${DB_NAME:-selo_db}
+      POSTGRES_USER: ${DB_USER:-selo_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-selo_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./staticfiles:/var/www/static:ro
+      - ./mediafiles:/var/www/media:ro
+      - ./ssl:/etc/ssl/certs:ro
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
