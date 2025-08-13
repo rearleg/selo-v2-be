@@ -1,6 +1,13 @@
 from django.contrib import admin
 from django.urls import path, include
+from django.http import JsonResponse
+
 from users.views import SignupView, LoginView, LogoutView, KakaoLogin, JWTVerifyView
+
+
+def healthz(_):
+    return JsonResponse({"status": "ok"})
+
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -31,4 +38,5 @@ urlpatterns = [
             ]
         ),
     ),
+    path("api/healthz", healthz),
 ]

@@ -34,7 +34,7 @@ class User(AbstractUser):
         null=True,
         blank=True,
         related_name="users",
-        default=2,
+        # default=2,
     )
 
     # 개인정보 수집 이용 동의 여부

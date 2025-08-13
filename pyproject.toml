@@ -1,12 +1,12 @@
 [project]
-name = "be"
+name = "selo-v2-be"
 version = "0.1.0"
 description = ""
 authors = [
     {name = "rearleg",email = "frameonmoment@gmail.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "django (>=5.2.4,<6.0.0)",
     "djangorestframework (>=3.16.0,<4.0.0)",
