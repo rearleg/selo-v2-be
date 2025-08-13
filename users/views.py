@@ -212,29 +212,35 @@ class KakaoLogin(APIView):
     
     def post(self, request):
         """
-        React Native 앱에서 카카오 인가 코드로 로그인
-        Request body: {"code": "카카오_인가_코드"}
+        카카오 소셜 로그인 (Web: 인가 코드, React Native: 액세스 토큰)
+        Request body: {"code": "카카오_인가_코드"} 또는 {"access_token": "카카오_액세스_토큰"}
         """
         code = request.data.get('code')
-        if not code:
+        access_token = request.data.get('access_token')
+        
+        if not code and not access_token:
             return Response(
-                {"error": "인가 코드가 필요합니다."},
+                {"error": "인가 코드 또는 액세스 토큰이 필요합니다."},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         try:
-            # 1. 카카오 액세스 토큰 받기
-            kakao_token_data = self._get_kakao_token(code)
-            if not kakao_token_data:
-                return Response(
-                    {"error": "카카오 토큰 받기에 실패했습니다."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            access_token = kakao_token_data.get('access_token')
+            # 1. 액세스 토큰 획득 (인가 코드 방식 또는 직접 토큰)
+            if access_token:
+                # React Native: 직접 액세스 토큰 사용
+                final_access_token = access_token
+            else:
+                # Web: 인가 코드로 액세스 토큰 받기
+                kakao_token_data = self._get_kakao_token(code)
+                if not kakao_token_data:
+                    return Response(
+                        {"error": "카카오 토큰 받기에 실패했습니다."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                final_access_token = kakao_token_data.get('access_token')
             
             # 2. 카카오 사용자 정보 받기
-            kakao_user_data = self._get_kakao_user_info(access_token)
+            kakao_user_data = self._get_kakao_user_info(final_access_token)
             if not kakao_user_data:
                 return Response(
                     {"error": "카카오 사용자 정보를 가져올 수 없습니다."},
