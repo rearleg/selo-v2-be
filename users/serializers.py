@@ -14,7 +14,7 @@ class UserTypeSerializer(serializers.ModelSerializer):
 class UserSelloingInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserSelloingInfo
-        fields = ['id', 'level', 'goal', 'job', 'interest', 'created_at', 'updated_at']
+        fields = ['id', 'goal', 'job', 'interest', 'created_at', 'updated_at']
 
 
 class SignupSerializer(serializers.ModelSerializer):
