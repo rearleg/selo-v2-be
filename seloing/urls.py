@@ -5,8 +5,12 @@ from . import views
 app_name = 'seloing'
 
 urlpatterns = [
-    # POST /v1/seloing/topics
-    path('topics/', views.TopicCreateView.as_view(), name='topic-create'),
+    # 새로운 주제 생성 API
+    path('topics/', views.TopicGenerateView.as_view(), name='topic-generate'),
+    path('topics/<int:pk>/', views.TopicDetailView.as_view(), name='topic-detail'),
+    
+    # 기존 주제 생성 (deprecated, 호환성을 위해 유지)
+    # path('topics/', views.TopicCreateView.as_view(), name='topic-create-old'),
     
     # POST /v1/seloing - 셀로잉 생성
     path('', views.SeloingCreateView.as_view(), name='seloing-create'),

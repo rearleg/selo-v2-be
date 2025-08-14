@@ -3,7 +3,7 @@ from rest_framework import status, permissions
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
-from .models import Seloing, SeloingAnalysis, SeloingResult, SeloingAudio, SeloingReward
+from .models import Seloing, SeloingAnalysis, SeloingResult, SeloingAudio, SeloingReward, Topic
 from .serializers import (
     TopicCreateSerializer,
     SeloingCreateSerializer,
@@ -12,7 +12,11 @@ from .serializers import (
     AICallbackSerializer,
     StatSaveSerializer,
     SeloingSerializer,
+    TopicSerializer,
+    TopicGenerateSerializer,
+    TopicUpdateSerializer,
 )
+from .services import generate_topics_sync
 from stats.models import UserStats, GlobalStats
 import requests
 
@@ -268,4 +272,69 @@ class RewardClaimView(APIView):
                 status=status.HTTP_200_OK,
             )
 
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TopicGenerateView(APIView):
+    """주제 생성 API"""
+    
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request):
+        """주제 생성 (POST) - 바디 없이"""
+        try:
+            # ChatGPT API로 주제 생성 (동기 처리)
+            topic1, topic2, topic3 = generate_topics_sync(request.user)
+            
+            # DB에 저장
+            topic = Topic.objects.create(
+                user=request.user,
+                topic1=topic1,
+                topic2=topic2,
+                topic3=topic3
+            )
+            
+            # 생성된 주제를 바로 응답으로 반환
+            serializer = TopicSerializer(topic)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            print(f"주제 생성 실패: {e}")
+            return Response(
+                {"error": "주제 생성 중 오류가 발생했습니다."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def get(self, request):
+        """최근 주제 조회 (GET)"""
+        latest_topic = Topic.objects.filter(user=request.user).order_by('-created_at').first()
+        if latest_topic:
+            serializer = TopicSerializer(latest_topic)
+            return Response(serializer.data)
+        else:
+            return Response(
+                {"message": "생성된 주제가 없습니다."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class TopicDetailView(APIView):
+    """주제 상세 조회 및 업데이트 API"""
+    
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, pk):
+        """특정 주제 조회 (GET)"""
+        topic = get_object_or_404(Topic, pk=pk, user=request.user)
+        serializer = TopicSerializer(topic)
+        return Response(serializer.data)
+    
+    def put(self, request, pk):
+        """주제 선택 업데이트 (PUT)"""
+        topic = get_object_or_404(Topic, pk=pk, user=request.user)
+        serializer = TopicUpdateSerializer(topic, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

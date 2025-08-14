@@ -4,6 +4,29 @@ from django.dispatch import receiver
 from common.models import CommonModel
 
 
+class Topic(CommonModel):
+    """주제 생성 및 선택"""
+    class IsSelectChoice(models.TextChoices):
+        NONE = "none", "선택안함"
+        FIRST = "1", "첫번째 주제"
+        SECOND = "2", "두번째 주제"
+        THIRD = "3", "세번째 주제"
+        SKIP = "skip", "다시뽑기"
+    
+    user = models.ForeignKey("users.User", on_delete=models.CASCADE)
+    topic1 = models.CharField(max_length=300)
+    topic2 = models.CharField(max_length=300)
+    topic3 = models.CharField(max_length=300)
+    is_select = models.CharField(
+        max_length=10,
+        choices=IsSelectChoice.choices,
+        default=IsSelectChoice.NONE
+    )
+    
+    def __str__(self):
+        return f"Topic {self.pk} - User: {self.user.username}"
+
+
 class Seloing(CommonModel):
     """셀로잉 학습 세션"""
     user = models.ForeignKey("users.User", on_delete=models.PROTECT)

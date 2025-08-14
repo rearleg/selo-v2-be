@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Seloing, SeloingAnalysis, SeloingResult, SeloingAudio, SeloingReward
+from .models import Seloing, SeloingAnalysis, SeloingResult, SeloingAudio, SeloingReward, Topic
 
 
 class SeloingAudioSerializer(serializers.ModelSerializer):
@@ -136,3 +136,37 @@ class StatSaveSerializer(serializers.Serializer):
     """스탯 저장용"""
     earned_exp = serializers.IntegerField(min_value=0)
     earned_candy = serializers.IntegerField(min_value=0)
+
+
+# Topic 관련 시리얼라이저들
+class TopicSerializer(serializers.ModelSerializer):
+    """주제 시리얼라이저"""
+    
+    class Meta:
+        model = Topic
+        fields = ['id', 'topic1', 'topic2', 'topic3', 'is_select', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+
+class TopicGenerateSerializer(serializers.ModelSerializer):
+    """주제 생성 시리얼라이저"""
+    
+    class Meta:
+        model = Topic
+        fields = ['id', 'topic1', 'topic2', 'topic3', 'created_at']
+        read_only_fields = ['id', 'topic1', 'topic2', 'topic3', 'created_at']
+
+
+class TopicUpdateSerializer(serializers.ModelSerializer):
+    """주제 선택 업데이트 시리얼라이저"""
+    
+    class Meta:
+        model = Topic
+        fields = ['is_select']
+        
+    def validate_is_select(self, value):
+        """is_select 필드 유효성 검사"""
+        valid_choices = [choice[0] for choice in Topic.IsSelectChoice.choices]
+        if value not in valid_choices:
+            raise serializers.ValidationError(f"유효하지 않은 선택입니다. 가능한 값: {valid_choices}")
+        return value
