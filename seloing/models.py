@@ -73,9 +73,44 @@ class SeloingReward(CommonModel):
 
 
 @receiver(post_save, sender=Seloing)
-def update_stats_on_seloing_completion(sender, instance, created, **kwargs):
-    """셀로잉이 완료될 때 통계 자동 업데이트"""
-    # 셀로잉이 완료되고 결과가 있을 때만 통계 업데이트
+def update_stats_and_rewards_on_completion(sender, instance, created, **kwargs):
+    """셀로잉이 완료될 때 통계 업데이트 및 보상 지급"""
+    # 셀로잉이 완료되고 결과가 있을 때만 처리
     if instance.is_completed and hasattr(instance, 'seloingresult'):
+        # 1. 통계 업데이트 (점수, 횟수 등)
         from .utils import update_seloing_statistics
         update_seloing_statistics(instance, instance.seloingresult)
+        
+        # 2. 보상 지급 (경험치, 캔디) - 이미 보상이 지급되지 않은 경우만
+        if not hasattr(instance, 'seloingreward'):
+            from stats.models import UserStats, GlobalStats
+            from django.db import transaction
+            
+            with transaction.atomic():
+                # 점수 기반 보상 계산
+                result = instance.seloingresult
+                if result and result.total_score:
+                    earned_exp = result.total_score * 5  # 점수 * 5
+                    earned_candy = result.total_score * 10  # 점수 * 10
+                else:
+                    earned_exp = 25  # 기본 경험치
+                    earned_candy = 50  # 기본 캔디
+                
+                # 보상 저장
+                SeloingReward.objects.create(
+                    seloing=instance,
+                    earned_exp=earned_exp,
+                    earned_candy=earned_candy
+                )
+                
+                # 유저 스탯의 보상 필드 업데이트 (통계와는 별개)
+                user_stats, created = UserStats.objects.get_or_create(user=instance.user)
+                user_stats.total_exp += earned_exp
+                user_stats.total_candy += earned_candy
+                user_stats.save()
+                
+                # 글로벌 스탯의 보상 필드 업데이트
+                global_stats, created = GlobalStats.objects.get_or_create(id=1)
+                global_stats.global_exp += earned_exp
+                global_stats.global_candy += earned_candy
+                global_stats.save()

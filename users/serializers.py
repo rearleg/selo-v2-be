@@ -95,6 +95,40 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         ]
 
 
+class UserOnboardingSerializer(serializers.Serializer):
+    """온보딩 정보 업데이트"""
+    goal = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    job = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    interest = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    user_type_id = serializers.IntegerField(required=False)
+    
+    def update(self, instance, validated_data):
+        # UserSelloingInfo 업데이트
+        seloing_info = instance.seloing_infos.first()
+        if seloing_info:
+            if 'goal' in validated_data:
+                seloing_info.goal = validated_data['goal']
+            if 'job' in validated_data:
+                seloing_info.job = validated_data['job']
+            if 'interest' in validated_data:
+                seloing_info.interest = validated_data['interest']
+            seloing_info.save()
+        
+        # User 정보 업데이트
+        if 'user_type_id' in validated_data:
+            try:
+                user_type = UserType.objects.get(id=validated_data['user_type_id'])
+                instance.user_type = user_type
+            except UserType.DoesNotExist:
+                pass
+        
+        # 온보딩 완료 처리
+        instance.is_onboarding = True
+        instance.save()
+        
+        return instance
+
+
 class UserListSerializer(serializers.ModelSerializer):
     """관리자용 유저 리스트 조회"""
     class Meta:

@@ -172,7 +172,18 @@ KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
 # 우리 서비스용 JWT
 APP_JWT_SECRET = os.getenv("APP_JWT_SECRET", "CHANGE-ME")
 APP_JWT_ALG = "HS256"
-APP_JWT_EXP_MINUTES = 60 * 24 * 7  # 7일 예시
+APP_JWT_ACCESS_EXP_MINUTES = 5  # 5분
+APP_JWT_REFRESH_EXP_WEEKS = 4  # 4주
+
+# s3 기본 설정
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
+AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME")  # 서울 리전
+AWS_QUERYSTRING_AUTH = os.getenv("AWS_QUERYSTRING_AUTH")  # URL에 인증 파라미터 안 붙이기
+
+# 스토리지 설정
+DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
 # s3 전환 훅
 USE_S3 = os.getenv("USE_S3", "false").lower() == "true"
@@ -190,6 +201,9 @@ if USE_S3:
 
     # S3 사용 시 미디어 URL을 S3로
     MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+
+
+
 
 
 ### 추가 보안 설정

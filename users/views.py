@@ -4,7 +4,6 @@ import json
 from rest_framework.views import APIView
 from rest_framework import status, permissions
 from rest_framework.response import Response
-from rest_framework.authtoken.models import Token
 from django.contrib.auth import login, logout
 from django.shortcuts import get_object_or_404
 from django.conf import settings
@@ -16,6 +15,7 @@ from .serializers import (
     UserSerializer,
     UserUpdateSerializer,
     UserListSerializer,
+    UserOnboardingSerializer,
 )
 from seloing.serializers import SeloingListSerializer
 from seloing.models import Seloing
@@ -30,12 +30,17 @@ class SignupView(APIView):
         serializer = SignupSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            token, created = Token.objects.get_or_create(user=user)
+            # JWT 토큰 생성 (Access + Refresh)
+            from .jwt_utils import generate_jwt_tokens
+            tokens = generate_jwt_tokens(user)
             return Response(
                 {
                     "message": "회원가입이 완료되었습니다.",
                     "user": UserSerializer(user).data,
-                    "token": token.key,
+                    "access_token": tokens['access_token'],
+                    "refresh_token": tokens['refresh_token'],
+                    "access_expires_in": tokens['access_expires_in'],
+                    "refresh_expires_in": tokens['refresh_expires_in'],
                 },
                 status=status.HTTP_201_CREATED,
             )
@@ -52,12 +57,17 @@ class LoginView(APIView):
         if serializer.is_valid():
             user = serializer.validated_data["user"]
             login(request, user)
-            token, created = Token.objects.get_or_create(user=user)
+            # JWT 토큰 생성 (Access + Refresh)
+            from .jwt_utils import generate_jwt_tokens
+            tokens = generate_jwt_tokens(user)
             return Response(
                 {
                     "message": "로그인되었습니다.",
                     "user": UserSerializer(user).data,
-                    "token": token.key,
+                    "access_token": tokens['access_token'],
+                    "refresh_token": tokens['refresh_token'],
+                    "access_expires_in": tokens['access_expires_in'],
+                    "refresh_expires_in": tokens['refresh_expires_in'],
                 },
                 status=status.HTTP_200_OK,
             )
@@ -70,13 +80,12 @@ class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        try:
-            # 토큰 삭제
-            token = Token.objects.get(user=request.user)
-            token.delete()
-        except Token.DoesNotExist:
-            pass
-
+        # Refresh Token이 있으면 무효화
+        refresh_token = request.data.get('refresh_token')
+        if refresh_token:
+            from .jwt_utils import revoke_refresh_token
+            revoke_refresh_token(refresh_token)
+        
         logout(request)
         return Response({"message": "로그아웃되었습니다."}, status=status.HTTP_200_OK)
 
@@ -205,6 +214,35 @@ class UserSeloingDetailView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class UserOnboardingView(APIView):
+    """유저 온보딩 정보 업데이트 (본인만)"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def put(self, request, user_id):
+        """온보딩 정보 업데이트 및 완료 처리"""
+        user = get_object_or_404(User, id=user_id)
+
+        # 본인만 접근 가능
+        if user != request.user:
+            return Response(
+                {"error": "본인의 정보만 수정할 수 있습니다."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = UserOnboardingSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated_user = serializer.save()
+            return Response(
+                {
+                    "message": "온보딩이 완료되었습니다.",
+                    "user": UserSerializer(updated_user).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
 class KakaoLogin(APIView):
     """카카오 소셜 로그인"""
     
@@ -250,18 +288,17 @@ class KakaoLogin(APIView):
             # 3. 사용자 생성 또는 로그인
             user = self._get_or_create_user(kakao_user_data)
             
-            # 4. JWT 토큰 생성
-            from .jwt_utils import generate_jwt_token
-            jwt_token = generate_jwt_token(user)
-            
-            # 5. DRF 토큰도 함께 생성 (기존 시스템 호환성)
-            drf_token, created = Token.objects.get_or_create(user=user)
+            # 4. JWT 토큰 생성 (Access + Refresh)
+            from .jwt_utils import generate_jwt_tokens
+            tokens = generate_jwt_tokens(user)
             
             return Response({
                 "message": "카카오 로그인 성공",
                 "user": UserSerializer(user).data,
-                "jwt_token": jwt_token,
-                "drf_token": drf_token.key,  # 기존 시스템 호환용
+                "access_token": tokens['access_token'],
+                "refresh_token": tokens['refresh_token'],
+                "access_expires_in": tokens['access_expires_in'],
+                "refresh_expires_in": tokens['refresh_expires_in'],
                 "is_new_user": user.date_joined == user.last_login
             }, status=status.HTTP_200_OK)
             
@@ -333,11 +370,12 @@ class KakaoLogin(APIView):
             nickname=nickname,
             profile_image=profile_image,
             # 카카오 로그인이므로 패스워드는 사용하지 않음
-            password=User.objects.make_random_password()
+            password=None
         )
         
         # 로그인 시간 설정
         user.last_login = timezone.now()
+        user.set_unusable_password()
         user.save()
         
         return user
@@ -347,6 +385,39 @@ class NaverLogin(APIView):
 
 class GoogleLogin(APIView):
     pass
+
+
+class TokenRefreshView(APIView):
+    """Refresh Token으로 새로운 Access Token 발급"""
+    
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request):
+        """
+        Refresh Token으로 새로운 토큰 쌍 발급
+        Request body: {"refresh_token": "refresh_token"}
+        """
+        refresh_token = request.data.get('refresh_token')
+        if not refresh_token:
+            return Response(
+                {"error": "Refresh token이 필요합니다."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        from .jwt_utils import refresh_access_token
+        tokens = refresh_access_token(refresh_token)
+        
+        if tokens:
+            return Response({
+                "access_token": tokens['access_token'],
+                "refresh_token": tokens['refresh_token'],
+                "access_expires_in": tokens['access_expires_in'],
+                "refresh_expires_in": tokens['refresh_expires_in'],
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                "error": "유효하지 않거나 만료된 refresh token입니다."
+            }, status=status.HTTP_401_UNAUTHORIZED)
 
 
 class JWTVerifyView(APIView):

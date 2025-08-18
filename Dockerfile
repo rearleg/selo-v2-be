@@ -50,7 +50,7 @@ COPY . /app
 # 엔트리포인트 스크립트
 COPY entrypoint.sh /entrypoint.sh
 
-# ← 역슬래시 뒤 공백 제거!
+
 RUN chmod +x /entrypoint.sh \
  && chown -R appuser:appuser /app
 

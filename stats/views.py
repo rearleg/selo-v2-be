@@ -6,7 +6,7 @@ from django.db.models import F
 from .models import UserStats, GlobalStats
 from .serializers import (
     RankingSerializer, UserRankingDetailSerializer, 
-    UserStatsSerializer, GlobalStatsSerializer
+    UserStatsSerializer, GlobalStatsSerializer, UserRewardsSerializer
 )
 from users.models import User
 
@@ -100,4 +100,31 @@ class UserRankingDetailView(APIView):
         }
         
         serializer = UserRankingDetailSerializer(response_data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class UserRewardsView(APIView):
+    """유저 보상 정보 (exp, candy) 조회"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, user_id=None):
+        # user_id가 있으면 해당 유저, 없으면 현재 로그인한 유저
+        if user_id:
+            # 본인 정보만 조회 가능 (또는 관리자)
+            if user_id != request.user.id and not request.user.is_staff:
+                return Response(
+                    {"error": "본인의 정보만 조회할 수 있습니다."}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            user = get_object_or_404(User, id=user_id)
+        else:
+            user = request.user
+        
+        user_stats = UserStats.objects.filter(user=user).first()
+        if not user_stats:
+            return Response({
+                'error': '해당 유저의 통계가 존재하지 않습니다.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = UserRewardsSerializer(user_stats)
         return Response(serializer.data, status=status.HTTP_200_OK)

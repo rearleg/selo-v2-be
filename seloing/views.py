@@ -1,7 +1,9 @@
+import uuid
 from rest_framework.views import APIView
 from rest_framework import status, permissions
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from django.core.files.storage import default_storage
 from django.db import transaction
 from .models import Seloing, SeloingAnalysis, SeloingResult, SeloingAudio, SeloingReward, Topic
 from .serializers import (
@@ -57,66 +59,121 @@ class SeloingCreateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class RecordingUploadView(APIView):
-    """녹음 파일 분석 요청"""
+# class RecordingUploadView(APIView):
+#     """녹음 파일 분석 요청"""
 
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def post(self, request, seloing_id):
+#         seloing = get_object_or_404(Seloing, id=seloing_id, user=request.user)
+
+#         if seloing.is_completed:
+#             return Response(
+#                 {"error": "이미 완료된 셀로잉입니다."},
+#                 status=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         serializer = RecordingUploadSerializer(data=request.data)
+#         if serializer.is_valid():
+#             audio_file = serializer.validated_data["audio_file"]
+#             duration_seconds = serializer.validated_data["duration_seconds"]
+
+#             # 파일 저장 로직 (실제 구현에서는 S3 등 클라우드 스토리지 사용)
+#             filename = f"seloing_{seloing_id}_{audio_file.name}"
+#             file_url = f"https://your-storage.com/{filename}"  # 실제 URL로 교체
+
+#             # 오디오 정보 저장
+#             seloing_audio, created = SeloingAudio.objects.get_or_create(
+#                 seloing=seloing,
+#                 defaults={
+#                     "filename": filename,
+#                     "file_url": file_url,
+#                     "duration_seconds": duration_seconds,
+#                 },
+#             )
+
+#             # AI 분석 요청 (비동기)
+#             try:
+#                 ai_response = requests.post(
+#                     "http://ai-server/ai/v1/selowhisper",  # 실제 AI 서버 URL로 교체
+#                     json={
+#                         "seloing_id": seloing.id,
+#                         "audio_url": file_url,
+#                         "callback_url": f"http://your-backend/v1/seloing/{seloing.id}",
+#                     },
+#                 )
+
+#                 return Response(
+#                     {
+#                         "message": "분석 요청이 완료되었습니다.",
+#                         "seloing_id": seloing.id,
+#                     },
+#                     status=status.HTTP_202_ACCEPTED,
+#                 )
+
+#             except Exception as e:
+#                 return Response(
+#                     {"error": "AI 분석 요청 중 오류가 발생했습니다."},
+#                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#                 )
+
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class RecordingUploadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, seloing_id):
         seloing = get_object_or_404(Seloing, id=seloing_id, user=request.user)
 
         if seloing.is_completed:
-            return Response(
-                {"error": "이미 완료된 셀로잉입니다."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"error": "이미 완료된 셀로잉입니다."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         serializer = RecordingUploadSerializer(data=request.data)
-        if serializer.is_valid():
-            audio_file = serializer.validated_data["audio_file"]
-            duration_seconds = serializer.validated_data["duration_seconds"]
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            # 파일 저장 로직 (실제 구현에서는 S3 등 클라우드 스토리지 사용)
-            filename = f"seloing_{seloing_id}_{audio_file.name}"
-            file_url = f"https://your-storage.com/{filename}"  # 실제 URL로 교체
+        audio_file = serializer.validated_data["audio_file"]
+        duration_seconds = serializer.validated_data["duration_seconds"]
 
-            # 오디오 정보 저장
-            seloing_audio, created = SeloingAudio.objects.get_or_create(
-                seloing=seloing,
-                defaults={
-                    "filename": filename,
-                    "file_url": file_url,
-                    "duration_seconds": duration_seconds,
-                },
-            )
+        # S3 경로(폴더/파일명) 구성
+        # 예: seloing/1234/uuid_originalname.m4a
+        s3_path = f"seloing/{seloing_id}/{uuid.uuid4()}_{audio_file.name}"
 
-            # AI 분석 요청 (비동기)
-            try:
-                ai_response = requests.post(
-                    "http://ai-server/ai/v1/selowhisper",  # 실제 AI 서버 URL로 교체
-                    json={
-                        "seloing_id": seloing.id,
-                        "audio_url": file_url,
-                        "callback_url": f"http://your-backend/v1/seloing/{seloing.id}",
-                    },
-                )
+        # S3에 저장 (django-storages의 default_storage 사용)
+        # InMemoryUploadedFile/TemporaryUploadedFile은 그대로 save에 넣어도 됨
+        saved_name = default_storage.save(s3_path, audio_file)
 
-                return Response(
-                    {
-                        "message": "분석 요청이 완료되었습니다.",
-                        "seloing_id": seloing.id,
-                    },
-                    status=status.HTTP_202_ACCEPTED,
-                )
+        # 퍼블릭 URL (AWS_QUERYSTRING_AUTH=False면 깔끔한 URL 반환)
+        file_url = default_storage.url(saved_name)
 
-            except Exception as e:
-                return Response(
-                    {"error": "AI 분석 요청 중 오류가 발생했습니다."},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+        # DB 저장
+        seloing_audio, created = SeloingAudio.objects.get_or_create(
+            seloing=seloing,
+            defaults={
+                "filename": audio_file.name,
+                "file_url": file_url,
+                "duration_seconds": duration_seconds,
+            },
+        )
+        if not created:
+            # 이미 레코드가 있으면 갱신
+            seloing_audio.filename = audio_file.name
+            seloing_audio.file_url = file_url
+            seloing_audio.duration_seconds = duration_seconds
+            seloing_audio.save(update_fields=["filename", "file_url", "duration_seconds"])
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # (선택) AI 분석 비동기 호출은 그대로 유지
+        # requests.post("http://ai-server/ai/v1/selowhisper", json={...})
 
+        return Response(
+            {
+                "message": "업로드 완료",
+                "seloing_id": seloing.id,
+                "file_url": file_url,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 class AnalysisProgressView(APIView):
     """분석 상태 조회"""

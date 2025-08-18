@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
 
-from users.views import SignupView, LoginView, LogoutView, KakaoLogin, JWTVerifyView
+from users.views import SignupView, LoginView, LogoutView, KakaoLogin, JWTVerifyView, TokenRefreshView
 
 
 def healthz(_):
@@ -22,7 +22,8 @@ urlpatterns = [
                 path("logout/", LogoutView.as_view(), name="logout"),
                 # 소셜 로그인
                 path("auth/kakao/", KakaoLogin.as_view(), name="kakao-login"),
-                # JWT 토큰 검증
+                # JWT 토큰 관리
+                path("auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
                 path("auth/verify/", JWTVerifyView.as_view(), name="jwt-verify"),
                 # 유저 관리
                 path("users/", include("users.urls")),

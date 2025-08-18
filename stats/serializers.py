@@ -3,6 +3,13 @@ from .models import UserStats, GlobalStats
 from users.models import User
 
 
+class UserRewardsSerializer(serializers.ModelSerializer):
+    """유저 보상 정보 (exp, candy) 조회용"""
+    class Meta:
+        model = UserStats
+        fields = ['total_exp', 'total_candy']
+
+
 class UserStatsSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserStats

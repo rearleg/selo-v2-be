@@ -101,6 +101,43 @@ class UserSelloingInfo(CommonModel):
     )
 
 
+# Refresh Token 관리
+class RefreshToken(CommonModel):
+    user = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="refresh_tokens"
+    )
+    token_hash = models.CharField(max_length=255, unique=True)
+    expires_at = models.DateTimeField()
+    is_revoked = models.BooleanField(default=False)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['token_hash']),
+            models.Index(fields=['user', 'is_revoked']),
+            models.Index(fields=['expires_at']),
+        ]
+
+    def __str__(self):
+        return f"RefreshToken for {self.user.username}"
+
+
+# 블랙리스트된 토큰
+class BlacklistedToken(CommonModel):
+    token_hash = models.CharField(max_length=255, unique=True)
+    expires_at = models.DateTimeField()
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['token_hash']),
+            models.Index(fields=['expires_at']),
+        ]
+
+    def __str__(self):
+        return f"BlacklistedToken: {self.token_hash[:20]}..."
+
+
 @receiver(post_save, sender=User)
 def create_user_related_objects(sender, instance, created, **kwargs):
     """유저 생성 시 UserStats와 UserSelloingInfo 자동 생성"""
