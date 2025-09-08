@@ -44,8 +44,3 @@ LOGGING = {
     },
 }
 
-# 개발용 디버그 출력 (SECRET_KEY 확인)
-if SECRET_KEY:
-    print(f"SECRET_KEY loaded: {SECRET_KEY[:10]}...")
-else:
-    print("WARNING: SECRET_KEY not found in environment variables!")

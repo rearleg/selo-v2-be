@@ -1,6 +1,7 @@
 import requests
 import jwt
 import json
+from openai import OpenAI
 from rest_framework.views import APIView
 from rest_framework import status, permissions
 from rest_framework.response import Response
@@ -8,7 +9,7 @@ from django.contrib.auth import login, logout
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.utils import timezone
-from .models import User
+from .models import User, OnboardingSession, OnboardingMessage
 from .serializers import (
     SignupSerializer,
     LoginSerializer,
@@ -16,6 +17,8 @@ from .serializers import (
     UserUpdateSerializer,
     UserListSerializer,
     UserOnboardingSerializer,
+    OnboardingSessionSerializer,
+    OnboardingChatSerializer,
 )
 from seloing.serializers import SeloingListSerializer
 from seloing.models import Seloing
@@ -450,3 +453,249 @@ class JWTVerifyView(APIView):
                 "valid": False,
                 "error": "유효하지 않은 토큰입니다."
             }, status=status.HTTP_401_UNAUTHORIZED)
+
+
+class OnboardingChatView(APIView):
+    """온보딩 대화 처리"""
+    
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        """현재 온보딩 세션 조회"""
+        session = OnboardingSession.objects.filter(
+            user=request.user, 
+            is_active=True
+        ).first()
+        
+        if not session:
+            # 새로운 세션 생성
+            session = OnboardingSession.objects.create(user=request.user)
+            # 첫 번째 AI 메시지 추가
+            OnboardingMessage.objects.create(
+                session=session,
+                sender=OnboardingMessage.SenderChoice.AI,
+                content="안녕하세요! 셀로에 오신 것을 환영합니다 🎉\n\n셀로 사용을 위해 몇 가지 질문을 드릴게요. 먼저 셀로를 사용하는 목표가 무엇인가요?\n\n예를 들어:\n- 발표 실력 향상\n- 면접 준비\n- 일상 대화 실력 향상\n- 영업 스킬 개발\n\n어떤 목표를 가지고 계신지 자유롭게 말씀해 주세요!",
+                step=OnboardingSession.StepChoice.GOAL
+            )
+        
+        serializer = OnboardingSessionSerializer(session)
+        return Response(serializer.data)
+    
+    def post(self, request):
+        """온보딩 대화 메시지 처리"""
+        serializer = OnboardingChatSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        user_message = serializer.validated_data['message']
+        
+        # 현재 활성 세션 가져오기
+        session = OnboardingSession.objects.filter(
+            user=request.user, 
+            is_active=True
+        ).first()
+        
+        if not session:
+            return Response(
+                {"error": "활성 온보딩 세션이 없습니다. GET 요청으로 세션을 시작해주세요."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 사용자 메시지 저장
+        OnboardingMessage.objects.create(
+            session=session,
+            sender=OnboardingMessage.SenderChoice.USER,
+            content=user_message,
+            step=session.current_step
+        )
+        
+        # AI 응답 생성
+        ai_response = self._generate_ai_response(session, user_message)
+        
+        # AI 메시지 저장
+        OnboardingMessage.objects.create(
+            session=session,
+            sender=OnboardingMessage.SenderChoice.AI,
+            content=ai_response['message'],
+            step=session.current_step
+        )
+        
+        # 단계 업데이트
+        if ai_response['next_step']:
+            session.current_step = ai_response['next_step']
+            session.save()
+        
+        # 온보딩 완료 처리
+        if session.current_step == OnboardingSession.StepChoice.COMPLETED:
+            self._complete_onboarding(session)
+        
+        serializer = OnboardingSessionSerializer(session)
+        return Response(serializer.data)
+    
+    def _generate_ai_response(self, session, user_message):
+        """ChatGPT를 사용한 AI 응답 생성"""
+        try:
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            current_step = session.current_step
+            
+            # 시스템 프롬프트 생성
+            system_prompt = self._get_system_prompt(current_step)
+            
+            # 대화 히스토리 구성
+            messages = [{"role": "system", "content": system_prompt}]
+            
+            # 이전 대화 내역 추가 (최근 6개 메시지만)
+            recent_messages = session.messages.all().order_by('created_at')
+            if recent_messages.count() > 6:
+                recent_messages = recent_messages[recent_messages.count()-6:]
+            
+            for msg in recent_messages:
+                role = "assistant" if msg.sender == OnboardingMessage.SenderChoice.AI else "user"
+                messages.append({"role": role, "content": msg.content})
+            
+            # 현재 사용자 메시지 추가
+            messages.append({"role": "user", "content": user_message})
+            
+            # ChatGPT API 호출
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                max_completion_tokens=300,
+                temperature=0.7
+            )
+            
+            ai_message = response.choices[0].message.content.strip()
+            
+            # 다음 단계 결정
+            next_step = self._determine_next_step(current_step, ai_message)
+            
+            return {
+                'message': ai_message,
+                'next_step': next_step
+            }
+            
+        except Exception as e:
+            # API 오류 시 기본 응답 사용
+            return self._get_fallback_response(current_step, user_message)
+    
+    def _get_system_prompt(self, current_step):
+        """단계별 시스템 프롬프트 생성"""
+        base_prompt = """
+당신은 셀로(Selo)라는 음성 대화 연습 앱의 친근한 온보딩 도우미입니다.
+사용자가 편안하게 느낄 수 있도록 친근하고 격려하는 톤으로 대화해주세요.
+이모지를 적절히 사용하고, 한국어로 대답해주세요.
+응답은 300자 이내로 간결하게 해주세요.
+
+셀로는 음성 대화 실력 향상을 도와주는 AI 서비스입니다.
+"""
+        
+        if current_step == OnboardingSession.StepChoice.GOAL:
+            return base_prompt + """
+현재 사용자의 목표를 파악하는 단계입니다.
+사용자가 목표를 말하면, 그 목표에 대해 공감하고 격려한 후, 
+자연스럽게 직업이나 상황에 대해 질문해주세요.
+
+예시 목표: 발표 실력 향상, 면접 준비, 일상 대화 실력 향상, 영업 스킬 개발 등
+"""
+        
+        elif current_step == OnboardingSession.StepChoice.JOB:
+            return base_prompt + """
+현재 사용자의 직업이나 상황을 파악하는 단계입니다.
+사용자가 직업/상황을 말하면, 그에 대해 공감하고 
+해당 분야에서 커뮤니케이션의 중요성을 언급한 후,
+자연스럽게 관심사에 대해 질문해주세요.
+
+예시 직업/상황: 학생, 직장인, 프리랜서, 창업 준비중, 주부 등
+"""
+        
+        elif current_step == OnboardingSession.StepChoice.INTEREST:
+            return base_prompt + """
+현재 사용자의 관심사를 파악하는 마지막 단계입니다.
+사용자가 관심사를 말하면, 그에 대해 긍정적으로 반응하고,
+온보딩 완료를 알려주세요.
+
+반드시 마지막에는 "온보딩이 완료되었습니다!"라고 명확히 말해주세요.
+"""
+        
+        return base_prompt
+    
+    def _determine_next_step(self, current_step, ai_message):
+        """AI 응답 내용을 보고 다음 단계 결정"""
+        # "온보딩이 완료되었습니다"가 포함되어 있으면 완료
+        if "온보딩이 완료" in ai_message:
+            return OnboardingSession.StepChoice.COMPLETED
+        
+        # 단계별 자동 진행
+        step_flow = {
+            OnboardingSession.StepChoice.GOAL: OnboardingSession.StepChoice.JOB,
+            OnboardingSession.StepChoice.JOB: OnboardingSession.StepChoice.INTEREST,
+            OnboardingSession.StepChoice.INTEREST: OnboardingSession.StepChoice.COMPLETED
+        }
+        return step_flow.get(current_step)
+    
+    def _get_fallback_response(self, current_step, user_message):
+        """API 오류 시 기본 응답"""
+        fallback_responses = {
+            OnboardingSession.StepChoice.GOAL: {
+                'message': f"'{user_message}' 목표네요! 정말 좋은 목표입니다 👍\n\n셀로는 이런 목표를 달성하는데 도움이 될 거예요. 그렇다면 현재 어떤 일을 하고 계신가요?",
+                'next_step': OnboardingSession.StepChoice.JOB
+            },
+            OnboardingSession.StepChoice.JOB: {
+                'message': f"{user_message} 상황이시군요! 그 분야에 맞는 커뮤니케이션 스킬이 정말 중요하죠 💼\n\n마지막으로 평소에 관심 있는 분야나 취미가 있나요?",
+                'next_step': OnboardingSession.StepChoice.INTEREST  
+            },
+            OnboardingSession.StepChoice.INTEREST: {
+                'message': f"{user_message}에 관심이 있으시는군요! 정말 흥미로운 분야네요 ✨\n\n온보딩이 완료되었습니다! 🎉",
+                'next_step': OnboardingSession.StepChoice.COMPLETED
+            }
+        }
+        
+        return fallback_responses.get(current_step, {
+            'message': "죄송합니다. 다시 시도해주세요.",
+            'next_step': None
+        })
+    
+    def _get_goal_from_session(self, session):
+        """세션에서 목표 추출"""
+        goal_messages = session.messages.filter(
+            sender=OnboardingMessage.SenderChoice.USER,
+            step=OnboardingSession.StepChoice.GOAL
+        )
+        return goal_messages.first().content if goal_messages.exists() else ""
+    
+    def _get_job_from_session(self, session):
+        """세션에서 직업 추출"""
+        job_messages = session.messages.filter(
+            sender=OnboardingMessage.SenderChoice.USER,
+            step=OnboardingSession.StepChoice.JOB
+        )
+        return job_messages.first().content if job_messages.exists() else ""
+    
+    def _complete_onboarding(self, session):
+        """온보딩 완료 처리"""
+        user = session.user
+        
+        # 사용자 정보에서 응답 추출
+        goal = self._get_goal_from_session(session)
+        job = self._get_job_from_session(session)
+        interest_messages = session.messages.filter(
+            sender=OnboardingMessage.SenderChoice.USER,
+            step=OnboardingSession.StepChoice.INTEREST
+        )
+        interest = interest_messages.first().content if interest_messages.exists() else ""
+        
+        # UserSelloingInfo 업데이트
+        seloing_info = user.seloing_infos.first()
+        if seloing_info:
+            seloing_info.goal = goal
+            seloing_info.job = job
+            seloing_info.interest = interest
+            seloing_info.save()
+        
+        # 온보딩 완료 표시
+        user.is_onboarding = True
+        user.save()
+        
+        # 세션 비활성화
+        session.is_active = False
+        session.save()

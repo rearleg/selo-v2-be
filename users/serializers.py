@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User, UserType, UserSelloingInfo
+from .models import User, UserType, UserSelloingInfo, OnboardingSession, OnboardingMessage
 from stats.models import UserStats
 
 
@@ -137,3 +137,22 @@ class UserListSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'nickname', 'is_active',
             'date_joined', 'last_login'
         ]
+
+
+class OnboardingMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OnboardingMessage
+        fields = ['id', 'sender', 'content', 'step', 'created_at']
+
+
+class OnboardingSessionSerializer(serializers.ModelSerializer):
+    messages = OnboardingMessageSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = OnboardingSession
+        fields = ['id', 'current_step', 'is_active', 'messages', 'created_at', 'updated_at']
+
+
+class OnboardingChatSerializer(serializers.Serializer):
+    """온보딩 대화 요청"""
+    message = serializers.CharField(max_length=1000)

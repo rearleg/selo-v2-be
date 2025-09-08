@@ -356,7 +356,6 @@ class TopicGenerateView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             
         except Exception as e:
-            print(f"주제 생성 실패: {e}")
             return Response(
                 {"error": "주제 생성 중 오류가 발생했습니다."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

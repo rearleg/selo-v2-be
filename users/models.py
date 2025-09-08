@@ -101,6 +101,60 @@ class UserSelloingInfo(CommonModel):
     )
 
 
+# 온보딩 대화 세션
+class OnboardingSession(CommonModel):
+    
+    class StepChoice(models.TextChoices):
+        GOAL = "goal", "목표"
+        JOB = "job", "직업"  
+        INTEREST = "interest", "흥미"
+        COMPLETED = "completed", "완료"
+
+    user = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="onboarding_sessions",
+    )
+    current_step = models.CharField(
+        max_length=20,
+        choices=StepChoice.choices,
+        default=StepChoice.GOAL,
+    )
+    is_active = models.BooleanField(default=True)
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.current_step}"
+
+
+# 온보딩 대화 메시지
+class OnboardingMessage(CommonModel):
+    
+    class SenderChoice(models.TextChoices):
+        AI = "ai", "AI"
+        USER = "user", "사용자"
+    
+    session = models.ForeignKey(
+        OnboardingSession,
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
+    sender = models.CharField(
+        max_length=10,
+        choices=SenderChoice.choices,
+    )
+    content = models.TextField()
+    step = models.CharField(
+        max_length=20,
+        choices=OnboardingSession.StepChoice.choices,
+    )
+    
+    class Meta:
+        ordering = ['created_at']
+    
+    def __str__(self):
+        return f"{self.sender}: {self.content[:50]}..."
+
+
 # Refresh Token 관리
 class RefreshToken(CommonModel):
     user = models.ForeignKey(

@@ -635,6 +635,110 @@ Authorization: Bearer <access_token>
 - `403 Forbidden`: 본인의 정보만 조회할 수 있습니다
 - `404 Not Found`: 존재하지 않는 사용자 또는 해당 유저의 통계가 존재하지 않습니다
 
+### 2.10 온보딩 대화 세션 시작/조회
+```
+GET /api/v1/users/onboarding/chat/
+```
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (200 OK):**
+```json
+{
+    "id": 1,
+    "current_step": "goal",
+    "is_active": true,
+    "messages": [
+        {
+            "id": 1,
+            "sender": "ai",
+            "content": "안녕하세요! 셀로에 오신 것을 환영합니다 🎉\n\n셀로 사용을 위해 몇 가지 질문을 드릴게요. 먼저 셀로를 사용하는 목표가 무엇인가요?\n\n예를 들어:\n- 발표 실력 향상\n- 면접 준비\n- 일상 대화 실력 향상\n- 영업 스킬 개발\n\n어떤 목표를 가지고 계신지 자유롭게 말씀해 주세요!",
+            "step": "goal",
+            "created_at": "2025-01-01T00:00:00Z"
+        }
+    ],
+    "created_at": "2025-01-01T00:00:00Z",
+    "updated_at": "2025-01-01T00:00:00Z"
+}
+```
+
+**설명:**
+- 첫 호출 시 새 온보딩 세션이 생성되고 AI의 환영 메시지가 포함됩니다
+- 이미 활성 세션이 있다면 기존 세션 정보를 반환합니다
+
+**Error Responses:**
+- `401 Unauthorized`: 유효하지 않은 access token
+
+### 2.11 온보딩 대화 메시지 전송
+```
+POST /api/v1/users/onboarding/chat/
+```
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+    "message": "발표 실력을 향상시켜서 회사에서 자신있게 프레젠테이션하고 싶어요"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+    "id": 1,
+    "current_step": "job",
+    "is_active": true,
+    "messages": [
+        {
+            "id": 1,
+            "sender": "ai",
+            "content": "안녕하세요! 셀로에 오신 것을 환영합니다 🎉...",
+            "step": "goal",
+            "created_at": "2025-01-01T00:00:00Z"
+        },
+        {
+            "id": 2,
+            "sender": "user",
+            "content": "발표 실력을 향상시켜서 회사에서 자신있게 프레젠테이션하고 싶어요",
+            "step": "goal",
+            "created_at": "2025-01-01T00:00:00Z"
+        },
+        {
+            "id": 3,
+            "sender": "ai",
+            "content": "발표 실력 향상이 목표시군요! 정말 좋은 목표입니다 👍 그렇다면 현재 어떤 일을 하고 계신가요? 직업이나 상황을 알려주시면 더 맞춤형 피드백을 드릴 수 있어요!",
+            "step": "goal",
+            "created_at": "2025-01-01T00:00:00Z"
+        }
+    ],
+    "created_at": "2025-01-01T00:00:00Z",
+    "updated_at": "2025-01-01T00:00:00Z"
+}
+```
+
+**온보딩 단계:**
+- `goal`: 목표 파악 단계
+- `job`: 직업/상황 파악 단계
+- `interest`: 관심사 파악 단계
+- `completed`: 온보딩 완료
+
+**온보딩 완료 시 자동 처리:**
+- `UserSelloingInfo`에 목표, 직업, 관심사 정보 저장
+- 사용자의 `is_onboarding` 필드가 `true`로 변경
+- 세션이 비활성화(`is_active: false`)
+
+**Error Responses:**
+- `400 Bad Request`: message 필드 누락, 활성 온보딩 세션이 없음
+- `401 Unauthorized`: 유효하지 않은 access token
+
 ---
 
 ## 3. Seloing (Speech Analysis)

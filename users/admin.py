@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, UserType, UserSelloingInfo
+from .models import User, UserType, UserSelloingInfo, OnboardingSession, OnboardingMessage
 
 
 class UserSelloingInfoInline(admin.StackedInline):
@@ -99,3 +99,31 @@ class UserTypeAdmin(admin.ModelAdmin):
     list_display = ["id", "seloing_type", "description", "created_at"]
     search_fields = ["seloing_type", "description"]
     ordering = ["id"]
+
+
+class OnboardingMessageInline(admin.TabularInline):
+    model = OnboardingMessage
+    extra = 0
+    readonly_fields = ['created_at']
+    fields = ['sender', 'content', 'step', 'created_at']
+
+
+@admin.register(OnboardingSession)
+class OnboardingSessionAdmin(admin.ModelAdmin):
+    list_display = ['id', 'user', 'current_step', 'is_active', 'created_at', 'updated_at']
+    list_filter = ['current_step', 'is_active', 'created_at']
+    search_fields = ['user__username', 'user__nickname']
+    readonly_fields = ['created_at', 'updated_at']
+    inlines = [OnboardingMessageInline]
+
+
+@admin.register(OnboardingMessage)
+class OnboardingMessageAdmin(admin.ModelAdmin):
+    list_display = ['id', 'session', 'sender', 'step', 'content_preview', 'created_at']
+    list_filter = ['sender', 'step', 'created_at']
+    search_fields = ['content', 'session__user__username']
+    readonly_fields = ['created_at']
+    
+    @admin.display(description="Content Preview")
+    def content_preview(self, obj):
+        return obj.content[:100] + "..." if len(obj.content) > 100 else obj.content

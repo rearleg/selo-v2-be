@@ -49,4 +49,10 @@ urlpatterns = [
         views.GoogleLogin.as_view(),
         name="google-login",
     ),
+    # 온보딩 대화
+    path(
+        "onboarding/chat/",
+        views.OnboardingChatView.as_view(),
+        name="onboarding-chat",
+    ),
 ]
